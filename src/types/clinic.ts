@@ -19,9 +19,15 @@ export interface ServiceItem {
     name: string;
     type: ServiceType;
     price: number;
-    costPrice?: number; // Added for profit calculation
+    costPrice?: number;
     unit: string;
     isActive: boolean;
+
+    // Added fields per request to support generic usage in Reports/Invoices
+    quantity?: number;
+    importDate?: string;
+    usage?: string;
+    sku?: string;
 }
 
 // --- NEW PHARMACY TYPES ---
