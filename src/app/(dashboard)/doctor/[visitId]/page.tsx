@@ -27,7 +27,7 @@ export default function EmrDetailPage() {
     const visitId = params.visitId as string;
     const printRef = useRef<HTMLDivElement>(null);
     const handlePrint = useReactToPrint({
-        content: () => printRef.current,
+        contentRef: printRef,
         documentTitle: `Don-thuoc-${visitId}`,
     });
 
