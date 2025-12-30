@@ -81,6 +81,7 @@ export interface PrescriptionOrder {
         batchId: string; // Deducted from specific batch
         quantity: number;
         price: number; // Sale price at time of sale
+        costPrice?: number; // Added for profit calculation
         subtotal: number;
     }[];
     totalAmount: number;
