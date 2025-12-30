@@ -119,7 +119,8 @@ export function PointOfSale() {
             await PharmacyService.createSale({
                 patientName,
                 status: 'completed',
-                createdBy: 'current_user_placeholder'
+                createdBy: 'current_user_placeholder',
+                createdAt: Date.now()
             }, orderItems);
 
             alert("Thanh toán thành công!");
