@@ -161,6 +161,7 @@ export interface UltrasoundData {
     amnioticFluid?: string;
     placenta?: string;
     presentation?: string; // Ngoi thai
+    gestationalAge?: string; // Tuan thai (from Ultrasound)
     notes?: string;
     images?: string[]; // URLs
 }
