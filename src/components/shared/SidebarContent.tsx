@@ -5,8 +5,11 @@ import { usePathname } from 'next/navigation';
 import { navItems } from '@/config/nav';
 import { cn } from '@/lib/utils'; // Shadcn util
 
+import { useAuth } from '@/components/providers/AuthProvider';
+
 export function SidebarContent() {
     const pathname = usePathname();
+    const { role } = useAuth();
 
     return (
         <div className="flex flex-col h-full bg-sidebar">
@@ -17,24 +20,26 @@ export function SidebarContent() {
                 <h1 className="text-xl font-bold text-primary">Hải My Clinic</h1>
             </div>
             <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-                {navItems.map((item) => {
-                    const isActive = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href));
-                    return (
-                        <Link
-                            key={item.href}
-                            href={item.href}
-                            className={cn(
-                                "flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group",
-                                isActive
-                                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                            )}
-                        >
-                            <item.icon className={cn("w-5 h-5 transition-colors", isActive ? "text-primary" : "text-muted-foreground group-hover:text-primary")} />
-                            <span className="font-medium">{item.label}</span>
-                        </Link>
-                    );
-                })}
+                {navItems
+                    .filter(item => !item.roles || (role && item.roles.includes(role)))
+                    .map((item) => {
+                        const isActive = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href));
+                        return (
+                            <Link
+                                key={item.href}
+                                href={item.href}
+                                className={cn(
+                                    "flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group",
+                                    isActive
+                                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                                        : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                                )}
+                            >
+                                <item.icon className={cn("w-5 h-5 transition-colors", isActive ? "text-primary" : "text-muted-foreground group-hover:text-primary")} />
+                                <span className="font-medium">{item.label}</span>
+                            </Link>
+                        );
+                    })}
             </nav>
             <div className="p-4 border-t border-sidebar-border">
                 <div className="flex items-center gap-3 px-4 py-2">

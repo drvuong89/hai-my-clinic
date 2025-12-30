@@ -50,16 +50,27 @@ export const EmrService = {
     },
 
     // Finish Visit (Move to Cashier)
-    finishVisit: async (visitId: string, services: InvoiceItem[]) => {
+    finishVisit: async (visitId: string, services: InvoiceItem[], status: 'completed' | 'waiting_payment' = 'completed') => {
         try {
             const docRef = doc(db, VISIT_COLLECTION, visitId);
             await updateDoc(docRef, {
-                status: "completed", // Or "billing_pending" depending on workflow
+                status: status,
                 services: services
             });
         } catch (error) {
             console.error("Error finishing visit: ", error);
             throw error;
         }
+    },
+
+    // Get Pending Prescriptions (Waiting for Payment)
+    getPendingPrescriptions: async (): Promise<MedicalRecord[]> => {
+        const q = query(
+            collection(db, VISIT_COLLECTION),
+            where("status", "==", "waiting_payment"),
+            orderBy("checkInTime", "desc")
+        );
+        const snap = await getDocs(q);
+        return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as MedicalRecord));
     }
 };

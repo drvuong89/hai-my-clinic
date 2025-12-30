@@ -12,7 +12,7 @@ export interface Patient {
     createdAt?: number; // Timestamp
 }
 
-export type ServiceType = "consultation" | "procedure" | "lab" | "pharmacy" | "package";
+export type ServiceType = "consultation" | "procedure" | "lab" | "paraclinical" | "pharmacy" | "package";
 
 export interface ServiceItem {
     id: string;
@@ -33,9 +33,18 @@ export interface Medicine {
     usage?: string; // Default usage instructions
     category?: string; // e.g., "Antibiotic", "Vitamin"
     minStockLevel?: number; // Alert threshold
+    costPrice?: number; // Standard Import Price
+    sellPrice?: number; // Standard Sell Price
     isActive: boolean;
     description?: string;
     manufacturer?: string;
+    packaging?: string; // e.g. "Hộp 3 vỉ x 10 viên"
+    // Packaging Conversion (Optional)
+    packagingSpecification?: {
+        boxToBlister?: number; // 1 Box = ? Blisters
+        blisterToUnit?: number; // 1 Blister = ? Units (Pills)
+        unitName?: string; // Base unit name (e.g. "Viên")
+    };
 }
 
 export interface InventoryBatch {
@@ -45,6 +54,7 @@ export interface InventoryBatch {
     expiryDate: string; // ISO Date YYYY-MM-DD
     importDate: string;
     costPrice: number; // Giá vốn nhập vào
+    sellPrice?: number; // Giá bán lẻ đề xuất
     originalQuantity: number; // Số lượng nhập ban đầu
     currentQuantity: number; // Số lượng hiện tại
     supplier?: string;
@@ -55,6 +65,10 @@ export interface PrescriptionOrder {
     createdAt: number;
     patientId?: string; // Optional (can be walk-in)
     patientName: string;
+    customerPhone?: string;
+    customerAddress?: string;
+    customerYob?: number;
+    customerGender?: "male" | "female";
     items: {
         medicineId: string;
         batchId: string; // Deducted from specific batch
@@ -64,6 +78,7 @@ export interface PrescriptionOrder {
     }[];
     totalAmount: number;
     status: 'completed' | 'cancelled';
+    saleSource?: 'clinic' | 'online' | 'retail'; // Added for POS separation
     createdBy: string;
 }
 
@@ -96,10 +111,14 @@ export interface VisitSession {
     patientId: string;
     patientName?: string;
     patientPhone?: string;
+    patientAddress?: string;
     dateOfBirth?: string;
     doctorName?: string;
     checkInTime: number;
-    status: "waiting" | "in_progress" | "completed" | "cancelled";
+    status: "waiting" | "in_progress" | "waiting_payment" | "completed" | "cancelled";
+    paymentStatus?: "unpaid" | "paid";
+    paymentMethod?: "cash" | "transfer"; // Added for payment tracking
+    totalAmount?: number; // Total paid amount
     services: InvoiceItem[];
     notes?: string;
 }
@@ -162,6 +181,7 @@ export interface UltrasoundData {
     placenta?: string;
     presentation?: string; // Ngoi thai
     gestationalAge?: string; // Tuan thai (from Ultrasound)
+    edd?: string; // Expected Date of Delivery (Du kien sinh)
     notes?: string;
     images?: string[]; // URLs
 }

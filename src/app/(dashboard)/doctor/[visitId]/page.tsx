@@ -11,12 +11,25 @@ import { Label } from "@/components/ui/label";
 import { Save, Printer, ArrowLeft, CheckCircle } from "lucide-react";
 import Link from "next/link";
 import { EmrService } from "@/lib/services/emr-service";
-import { MedicalRecord } from "@/types/clinic";
+import { MedicalRecord, Medicine, PrescriptionItem } from "@/types/clinic";
+
+import { ServiceSearch } from "@/components/clinic/ServiceSearch";
+
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Trash, Plus } from "lucide-react";
+import { PrescriptionTemplate } from "@/components/clinic/PrescriptionTemplate";
+import { useRef } from "react";
+import { useReactToPrint } from "react-to-print";
 
 export default function EmrDetailPage() {
     const params = useParams();
     const router = useRouter();
     const visitId = params.visitId as string;
+    const printRef = useRef<HTMLDivElement>(null);
+    const handlePrint = useReactToPrint({
+        content: () => printRef.current,
+        documentTitle: `Don-thuoc-${visitId}`,
+    });
 
     const [loading, setLoading] = useState(true);
     const [record, setRecord] = useState<Partial<MedicalRecord>>({});
@@ -67,8 +80,19 @@ export default function EmrDetailPage() {
         try {
             // Save first to ensure latest data
             await EmrService.updateRecord(visitId, record);
-            // Update status to completed (or pending_payment if you have cashier)
-            await EmrService.finishVisit(visitId, record.services || []);
+
+            // Determine status: If prescriptions OR services exist, go to 'waiting_payment', else 'completed'
+            const hasPrescriptions = record.prescription && record.prescription.length > 0;
+            const hasServices = record.services && record.services.length > 0;
+            const nextStatus = (hasPrescriptions || hasServices) ? 'waiting_payment' : 'completed';
+
+            await EmrService.finishVisit(visitId, record.services || [], nextStatus);
+
+            // Explicitly set payment status if needed (finishVisit only updates status/services)
+            if (hasPrescriptions || hasServices) {
+                await EmrService.updateRecord(visitId, { paymentStatus: 'unpaid' });
+            }
+
             router.push('/doctor'); // Back to list
         } catch (e) {
             console.error(e);
@@ -105,7 +129,32 @@ export default function EmrDetailPage() {
                 }
             };
         });
-    }
+    };
+
+
+
+    const addServiceItem = (service: import("@/types/clinic").ServiceItem) => {
+        setRecord(prev => {
+            const currentList = prev.services || [];
+            if (currentList.find(i => i.serviceId === service.id)) return prev;
+
+            const newItem: import("@/types/clinic").InvoiceItem = {
+                serviceId: service.id,
+                name: service.name,
+                quantity: 1,
+                price: service.price,
+                total: service.price * 1
+            };
+            return { ...prev, services: [...currentList, newItem] };
+        });
+    };
+
+    const removeServiceItem = (serviceId: string) => {
+        setRecord(prev => ({
+            ...prev,
+            services: (prev.services || []).filter(s => s.serviceId !== serviceId)
+        }));
+    };
 
     if (loading) return <div className="p-8 text-center">Đang tải hồ sơ...</div>;
 
@@ -151,7 +200,7 @@ export default function EmrDetailPage() {
                 <TabsList className="w-full justify-start h-12">
                     <TabsTrigger value="overview" className="text-base px-6">Hành chính & Tiền sử</TabsTrigger>
                     <TabsTrigger value="exam" className="text-base px-6">Khám & Siêu âm</TabsTrigger>
-                    <TabsTrigger value="diagnosis" className="text-base px-6">Chẩn đoán & Thuốc</TabsTrigger>
+                    <TabsTrigger value="diagnosis" className="text-base px-6">Chẩn đoán & Lời dặn</TabsTrigger>
                 </TabsList>
 
                 {/* TAB 1: OVERVIEW & VITALS */}
@@ -247,6 +296,71 @@ export default function EmrDetailPage() {
                 {/* TAB 2: EXAM & ULTRASOUND */}
                 <TabsContent value="exam">
                     <div className="space-y-6">
+                        {/* Service Indication */}
+                        <Card>
+                            <CardHeader><CardTitle className="text-xl text-primary">Chỉ định Cận lâm sàng / Dịch vụ</CardTitle></CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="max-w-md">
+                                    <Label className="mb-2 block">Thêm dịch vụ</Label>
+                                    <ServiceSearch onSelect={addServiceItem} />
+                                </div>
+
+                                <div className="border rounded-md">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>Tên dịch vụ</TableHead>
+                                                <TableHead className="w-[100px]">Số lượng</TableHead>
+                                                <TableHead className="w-[150px] text-right">Đơn giá</TableHead>
+                                                <TableHead className="w-[150px] text-right">Thành tiền</TableHead>
+                                                <TableHead className="w-[50px]"></TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {(record.services || []).length === 0 ? (
+                                                <TableRow>
+                                                    <TableCell colSpan={5} className="text-center text-muted-foreground py-6">
+                                                        Chưa có dịch vụ nào được chỉ định.
+                                                    </TableCell>
+                                                </TableRow>
+                                            ) : (
+                                                (record.services || []).map((item) => (
+                                                    <TableRow key={item.serviceId}>
+                                                        <TableCell className="font-medium">{item.name}</TableCell>
+                                                        <TableCell>
+                                                            <Input
+                                                                type="number"
+                                                                value={item.quantity}
+                                                                className="w-16 text-center"
+                                                                onChange={e => {
+                                                                    const qty = parseInt(e.target.value) || 1;
+                                                                    setRecord(prev => ({
+                                                                        ...prev,
+                                                                        services: prev.services?.map(s => s.serviceId === item.serviceId ? { ...s, quantity: qty, total: qty * s.price } : s)
+                                                                    }))
+                                                                }}
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell className="text-right">
+                                                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price)}
+                                                        </TableCell>
+                                                        <TableCell className="text-right font-bold">
+                                                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.total)}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-600" onClick={() => removeServiceItem(item.serviceId)}>
+                                                                <Trash className="w-4 h-4" />
+                                                            </Button>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </CardContent>
+                        </Card>
+
                         {/* Ultrasound */}
                         <Card>
                             <CardHeader><CardTitle>Kết quả Siêu âm thai</CardTitle></CardHeader>
@@ -266,7 +380,7 @@ export default function EmrDetailPage() {
                                 </div>
 
                                 <div className="bg-slate-50 p-4 rounded-lg border">
-                                    <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-3 gap-4">
                                         <div className="space-y-2">
                                             <Label className="text-primary font-bold">Trọng lượng thai (EFW)</Label>
                                             <Input className="font-bold text-lg" placeholder="Tự động tính..." value={record.ultrasound?.efw || ""} onChange={e => updateSection('ultrasound', 'efw', e.target.value)} />
@@ -275,9 +389,12 @@ export default function EmrDetailPage() {
                                             <Label className="text-primary font-bold">Tuổi thai (GA)</Label>
                                             <Input className="font-bold text-lg" placeholder="Tự động tính..." value={record.ultrasound?.gestationalAge || ""} onChange={e => updateSection('ultrasound', 'gestationalAge', e.target.value)} />
                                         </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-primary font-bold">Dự kiến sinh (EDD)</Label>
+                                            <Input type="date" className="font-bold text-lg" value={record.ultrasound?.edd || ""} onChange={e => updateSection('ultrasound', 'edd', e.target.value)} />
+                                        </div>
                                     </div>
                                 </div>
-
                                 <div className="space-y-2">
                                     <Label>Kết luận / Ghi chú siêu âm</Label>
                                     <Textarea className="min-h-[100px]" value={record.ultrasound?.notes || ""} onChange={e => updateSection('ultrasound', 'notes', e.target.value)} />
@@ -289,25 +406,45 @@ export default function EmrDetailPage() {
 
                 {/* TAB 3: DIAGNOSIS & PRESCRIPTION */}
                 <TabsContent value="diagnosis">
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="lg:col-span-2 space-y-6">
-                            <Card>
-                                <CardHeader><CardTitle>Chẩn đoán & Lời dặn</CardTitle></CardHeader>
-                                <CardContent className="space-y-4">
-                                    <div className="space-y-2">
-                                        <Label>Chẩn đoán xác định</Label>
-                                        <Textarea placeholder="VD: Thai 22 tuần..." value={record.diagnosis || ""} onChange={e => setRecord(p => ({ ...p, diagnosis: e.target.value }))} />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Lời dặn của bác sĩ</Label>
-                                        <Textarea placeholder="Nghỉ ngơi, uống thuốc đúng giờ..." value={record.doctorAdvice || ""} onChange={e => setRecord(p => ({ ...p, doctorAdvice: e.target.value }))} />
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </div>
-                    </div>
+                    <Card>
+                        <CardHeader><CardTitle className="text-xl text-primary">Chẩn đoán & Lời dặn</CardTitle></CardHeader>
+                        <CardContent className="space-y-8">
+                            {/* SECTION 1: DIAGNOSIS */}
+                            <div className="space-y-4 p-4 bg-slate-50/50 rounded-lg border">
+                                <Label className="text-lg font-bold text-blue-800 flex items-center gap-2">
+                                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center text-sm">1</div>
+                                    Chẩn đoán xác định
+                                </Label>
+                                <Textarea
+                                    className="text-base min-h-[80px] bg-white"
+                                    placeholder="Nhập chẩn đoán bệnh..."
+                                    value={record.diagnosis || ""}
+                                    onChange={e => setRecord(p => ({ ...p, diagnosis: e.target.value }))}
+                                />
+                            </div>
+
+                            {/* SECTION 2: DOCTOR ADVICE */}
+                            <div className="space-y-4 p-4 bg-slate-50/50 rounded-lg border">
+                                <Label className="text-lg font-bold text-blue-800 flex items-center gap-2">
+                                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center text-sm">2</div>
+                                    Lời dặn của bác sĩ
+                                </Label>
+                                <Textarea
+                                    className="text-base min-h-[120px] bg-white"
+                                    placeholder="Chế độ ăn uống, sinh hoạt, lịch tái khám..."
+                                    value={record.doctorAdvice || ""}
+                                    onChange={e => setRecord(p => ({ ...p, doctorAdvice: e.target.value }))}
+                                />
+                            </div>
+                        </CardContent>
+                    </Card>
                 </TabsContent>
             </Tabs>
-        </div>
+
+            {/* Hidden Print Component */}
+            <div className="hidden">
+                <PrescriptionTemplate ref={printRef} record={record as MedicalRecord} />
+            </div>
+        </div >
     );
 }

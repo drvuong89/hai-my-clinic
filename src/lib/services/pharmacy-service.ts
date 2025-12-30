@@ -76,11 +76,11 @@ export const PharmacyService = {
                 // But specifically for consistency, we'll try querying.
                 // Firestore Client SDK transactions support reading queries.
 
+                // SIMPLIFIED QUERY: Match by MedicineID only.
+                // Filter (>0) and Sort (Expiry) in client side to avoid Composite Index requirement.
                 const q = query(
                     collection(db, BATCH_COL),
-                    where("medicineId", "==", item.medicineId),
-                    where("currentQuantity", ">", 0),
-                    orderBy("expiryDate", "asc")
+                    where("medicineId", "==", item.medicineId)
                 );
 
                 // We actually have to execute this GET outside key loop or use refs if we can't query.
@@ -92,7 +92,17 @@ export const PharmacyService = {
                 const batchSnap = await getDocs(q); // Reading is allowed
 
                 let remainingQtyToDeduct = item.quantity;
-                const availableBatches = batchSnap.docs.map(doc => ({ ref: doc.ref, data: doc.data() as InventoryBatch }));
+
+                // Client-side Filter & Sort
+                const availableBatches = batchSnap.docs
+                    .map(doc => ({ ref: doc.ref, data: doc.data() as InventoryBatch }))
+                    .filter(b => b.data.currentQuantity > 0)
+                    .sort((a, b) => {
+                        // Sort by Expiry Date ASC
+                        if (a.data.expiryDate < b.data.expiryDate) return -1;
+                        if (a.data.expiryDate > b.data.expiryDate) return 1;
+                        return 0;
+                    });
 
                 // Calculate total available
                 const totalAvailable = availableBatches.reduce((sum, b) => sum + b.data.currentQuantity, 0);
@@ -134,5 +144,11 @@ export const PharmacyService = {
 
             return orderRef.id;
         });
+    },
+
+    getSales: async (): Promise<PrescriptionOrder[]> => {
+        const q = query(collection(db, SALE_COL), orderBy("createdAt", "desc"));
+        const snap = await getDocs(q);
+        return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as PrescriptionOrder));
     }
 };

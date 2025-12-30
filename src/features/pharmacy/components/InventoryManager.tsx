@@ -34,6 +34,7 @@ export function InventoryManager() {
         expiryDate: "",
         importDate: new Date().toISOString().split('T')[0],
         costPrice: 0,
+        sellPrice: 0,
         originalQuantity: 0,
         supplier: ""
     });
@@ -106,6 +107,7 @@ export function InventoryManager() {
                 expiryDate: importData.expiryDate,
                 importDate: importData.importDate!,
                 costPrice: Number(importData.costPrice),
+                sellPrice: Number(importData.sellPrice || 0),
                 originalQuantity: Number(importData.originalQuantity),
                 supplier: importData.supplier || ""
             });
@@ -219,49 +221,154 @@ export function InventoryManager() {
             </Card>
 
             <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
-                <DialogContent className="max-w-lg">
+                <DialogContent className="max-w-2xl">
                     <DialogHeader>
                         <DialogTitle>Nhập kho</DialogTitle>
-                        <DialogDescription>Chọn thuốc hoặc thêm mới.</DialogDescription>
+                        <DialogDescription>Nhập lẻ hoặc tải file Excel/CSV.</DialogDescription>
                     </DialogHeader>
-                    <div className="grid gap-4 py-2">
-                        <div className="space-y-2">
-                            <Label>Chọn Thuốc <span className="text-red-500">*</span></Label>
-                            <div className="flex gap-2">
-                                <Select
-                                    value={importData.medicineId}
-                                    onValueChange={(val) => setImportData({ ...importData, medicineId: val })}
-                                >
-                                    <SelectTrigger className="flex-1">
-                                        <SelectValue placeholder="Chọn thuốc..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {medicines.map(m => (
-                                            <SelectItem key={m.id} value={m.id}>{m.name} ({m.unit})</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <Button variant="secondary" size="icon" onClick={() => setIsAddMedDialogOpen(true)}>
-                                    <Plus className="w-4 h-4" />
-                                </Button>
+
+                    <div className="grid gap-6 py-2">
+                        {/* 1. FILE IMPORT SECTION */}
+                        <div className="border border-dashed p-4 rounded bg-slate-50 flex items-center justify-between">
+                            <div>
+                                <h4 className="font-semibold text-sm">Nhập từ File</h4>
+                                <p className="text-xs text-muted-foreground w-64">Định dạng: <span className="font-mono">Sku/Tên, Số Lô, Hạn Dùng (YYYY-MM-DD), Số Lượng</span></p>
                             </div>
+                            <Input
+                                type="file"
+                                accept=".csv, .txt"
+                                className="w-[220px] bg-white h-9 text-sm"
+                                onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+
+                                    const reader = new FileReader();
+                                    reader.onload = async (event) => {
+                                        const text = event.target?.result as string;
+                                        const lines = text.split('\n');
+                                        let count = 0;
+                                        // Simple Import Logic
+                                        for (let i = 1; i < lines.length; i++) {
+                                            const line = lines[i].trim();
+                                            if (!line) continue;
+
+                                            // Expect: SkuOrName, Batch, Expiry, Qty
+                                            // The system will try to match SkuOrName to existing Medicine to get Prices.
+                                            const [skuOrName, batch, expiry, qtyStr] = line.split(',').map(s => s.trim());
+
+                                            if (skuOrName && qtyStr) {
+                                                // Find medicine
+                                                const med = medicines.find(m =>
+                                                    m.sku?.toLowerCase() === skuOrName.toLowerCase() ||
+                                                    m.name.toLowerCase() === skuOrName.toLowerCase()
+                                                );
+
+                                                if (med) {
+                                                    await PharmacyService.addBatch({
+                                                        medicineId: med.id,
+                                                        batchNumber: batch || "BATCH-AUTO",
+                                                        expiryDate: expiry || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().substring(0, 10),
+                                                        importDate: new Date().toISOString().substring(0, 10),
+                                                        originalQuantity: Number(qtyStr),
+                                                        costPrice: med.costPrice || 0, // Auto-pick from Catalog
+                                                        sellPrice: med.sellPrice || 0, // Auto-pick from Catalog
+                                                        supplier: "Imported from File"
+                                                    });
+                                                    count++;
+                                                }
+                                            }
+                                        }
+                                        alert(`Đã nhập kho thành công ${count} lô hàng!`);
+                                        loadData();
+                                        e.target.value = '';
+                                    };
+                                    reader.readAsText(file);
+                                }}
+                            />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+
+                        {/* 2. MANUAL IMPORT SECTION */}
+                        <div className="space-y-4">
+                            <h4 className="font-semibold text-sm border-b pb-1">Hoặc Nhập Lẻ</h4>
                             <div className="space-y-2">
-                                <Label>Số lô</Label>
-                                <Input value={importData.batchNumber} onChange={e => setImportData({ ...importData, batchNumber: e.target.value })} placeholder="VD: B001" />
+                                <Label>Chọn Thuốc <span className="text-red-500">*</span></Label>
+                                <div className="flex gap-2">
+                                    <Select
+                                        value={importData.medicineId}
+                                        onValueChange={(val) => {
+                                            const med = medicines.find(m => m.id === val);
+                                            setImportData({
+                                                ...importData,
+                                                medicineId: val,
+                                                costPrice: med?.costPrice || 0,
+                                                sellPrice: med?.sellPrice || 0
+                                            });
+                                        }}
+                                    >
+                                        <SelectTrigger className="flex-1">
+                                            <SelectValue placeholder="Chọn thuốc..." />
+                                        </SelectTrigger>
+                                        <SelectContent className="max-h-[200px]">
+                                            {medicines.map(m => (
+                                                <SelectItem key={m.id} value={m.id}>{m.name} (SKU: {m.sku})</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <Button variant="secondary" size="icon" onClick={() => setIsAddMedDialogOpen(true)}>
+                                        <Plus className="w-4 h-4" />
+                                    </Button>
+                                </div>
                             </div>
-                            <div className="space-y-2">
-                                <Label>Hạn sử dụng</Label>
-                                <Input type="date" value={importData.expiryDate} onChange={e => setImportData({ ...importData, expiryDate: e.target.value })} />
+
+                            {/* Import Mode Toggle */}
+                            {importData.medicineId && (() => {
+                                const med = medicines.find(m => m.id === importData.medicineId);
+                                const ratio = (med?.packagingSpecification?.boxToBlister || 0) * (med?.packagingSpecification?.blisterToUnit || 0);
+                                if (ratio > 1) {
+                                    return (
+                                        <div className="bg-blue-50 p-2 rounded text-sm flex items-center justify-between">
+                                            <span className="text-blue-700 font-medium">Quy đổi: 1 Hộp = {ratio} {med?.unit}</span>
+                                        </div>
+                                    )
+                                }
+                            })()}
+
+                            <div className="grid grid-cols-3 gap-4">
+                                <div className="space-y-2">
+                                    <Label>Số lô</Label>
+                                    <Input value={importData.batchNumber} onChange={e => setImportData({ ...importData, batchNumber: e.target.value })} placeholder="VD: B001" />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Hạn sử dụng</Label>
+                                    <Input type="date" value={importData.expiryDate} onChange={e => setImportData({ ...importData, expiryDate: e.target.value })} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Số lượng (Đơn vị cơ bản)</Label>
+                                    <div className="relative">
+                                        <Input
+                                            type="number"
+                                            value={importData.originalQuantity}
+                                            onChange={e => setImportData({ ...importData, originalQuantity: Number(e.target.value) })}
+                                        />
+                                        {importData.medicineId && (
+                                            <div className="absolute right-3 top-2 text-xs text-muted-foreground">
+                                                {medicines.find(m => m.id === importData.medicineId)?.unit}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
-                            <div className="space-y-2">
-                                <Label>Số lượng</Label>
-                                <Input type="number" value={importData.originalQuantity} onChange={e => setImportData({ ...importData, originalQuantity: Number(e.target.value) })} />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Giá nhập</Label>
-                                <Input type="number" value={importData.costPrice} onChange={e => setImportData({ ...importData, costPrice: Number(e.target.value) })} />
+
+                            {/* Read Only Prices */}
+                            <div className="grid grid-cols-2 gap-4 bg-slate-100 p-2 rounded opacity-80 cursor-not-allowed">
+                                <div className="space-y-1">
+                                    <Label className="text-xs">Giá Nhập / {medicines.find(m => m.id === importData.medicineId)?.unit || 'Đơn vị'}</Label>
+                                    <div className="font-mono font-bold">{new Intl.NumberFormat('vi-VN').format(importData.costPrice || 0)} đ</div>
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-xs">Giá Bán / {medicines.find(m => m.id === importData.medicineId)?.unit || 'Đơn vị'}</Label>
+                                    <div className="font-mono font-bold text-blue-700">{new Intl.NumberFormat('vi-VN').format(importData.sellPrice || 0)} đ</div>
+                                </div>
                             </div>
                         </div>
                     </div>

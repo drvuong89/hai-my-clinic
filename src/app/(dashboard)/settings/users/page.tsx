@@ -84,9 +84,9 @@ export default function UserSettingsPage() {
             }
             setIsDialogOpen(false);
             loadUsers();
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
-            alert("Lỗi lưu dữ liệu");
+            alert("Lỗi: " + (e.message || "Không thể lưu dữ liệu"));
         }
     };
 

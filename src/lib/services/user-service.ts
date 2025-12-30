@@ -20,11 +20,59 @@ export const UserService = {
 
     // Add new user
     addUser: async (data: Omit<AppUser, "id" | "createdAt">) => {
-        const docRef = await addDoc(collection(db, COLLECTION_NAME), {
-            ...data,
-            createdAt: Date.now()
-        });
-        return docRef.id;
+        // 1. Create User in Firebase Auth (Using Secondary App to avoid logout)
+        // NOTE: This requires enabling "Email/Password" provider in Firebase Console
+        let secondaryApp;
+        let newUid = "";
+        try {
+            const { initializeApp, getApp, deleteApp } = await import("firebase/app");
+            const { getAuth, createUserWithEmailAndPassword } = await import("firebase/auth");
+
+            // Random name for secondary app
+            const appName = "secondaryApp-" + Date.now();
+            const config = {
+                apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+                authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+                projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+                storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+                messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+                appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+            };
+
+            secondaryApp = initializeApp(config, appName);
+            const secondaryAuth = getAuth(secondaryApp);
+
+            if (data.email && data.password) {
+                const userCredential = await createUserWithEmailAndPassword(secondaryAuth, data.email, data.password);
+                newUid = userCredential.user.uid;
+            } else {
+                throw new Error("Missing email or password");
+            }
+
+            // 2. Create User Profile in Firestore
+            // Use SECONDARY App's Firestore (authenticated as new user) to ensure "owner" write permissions
+            const { getFirestore, setDoc, doc } = await import("firebase/firestore");
+            const secondaryDb = getFirestore(secondaryApp);
+
+            await setDoc(doc(secondaryDb, COLLECTION_NAME, newUid), {
+                ...data,
+                password: null, // Security: Don't save password
+                createdAt: Date.now()
+            });
+
+            // Cleanup
+            await deleteApp(secondaryApp);
+
+            return newUid;
+
+        } catch (error: any) {
+            console.error("Error creating user:", error);
+            if (secondaryApp) {
+                const { deleteApp } = await import("firebase/app");
+                await deleteApp(secondaryApp).catch(() => { });
+            }
+            throw error;
+        }
     },
 
     // Update user

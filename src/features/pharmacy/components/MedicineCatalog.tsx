@@ -26,6 +26,8 @@ export function MedicineCatalog() {
         sku: "",
         category: "",
         minStockLevel: 10,
+        costPrice: 0,
+        sellPrice: 0,
         isActive: true
     });
 
@@ -59,6 +61,8 @@ export function MedicineCatalog() {
             sku: "",
             category: "",
             minStockLevel: 10,
+            costPrice: 0,
+            sellPrice: 0,
             isActive: true
         });
         setIsDialogOpen(true);
@@ -113,6 +117,60 @@ export function MedicineCatalog() {
                     <Plus className="w-4 h-4" /> Thêm định nghĩa mới
                 </Button>
             </div>
+
+            <Card className="bg-slate-50 border-dashed border-2">
+                <CardContent className="p-4 flex items-center justify-between">
+                    <div>
+                        <h4 className="font-semibold text-sm">Nhập từ File (CSV/Excel)</h4>
+                        <p className="text-xs text-muted-foreground">Tải lên danh sách thuốc định dạng: <span className="font-mono">Mã, Tên, Đơn vị, Giá nhập, Giá bán</span></p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Input
+                            type="file"
+                            accept=".csv, .txt"
+                            className="w-[250px] bg-white h-9 text-sm"
+                            onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+
+                                const reader = new FileReader();
+                                reader.onload = async (event) => {
+                                    const text = event.target?.result as string;
+                                    const lines = text.split('\n');
+                                    let count = 0;
+                                    // Simple CSV parsing
+                                    for (let i = 1; i < lines.length; i++) {
+                                        const line = lines[i].trim();
+                                        if (!line) continue;
+                                        // Expect: SKU, Name, Unit, Category, SellPrice
+                                        const parts = line.split(',').map(s => s.trim());
+                                        if (parts.length >= 2) {
+                                            // Ensure at least SKU/Name
+                                            const [sku, name, unit, category, priceStr] = parts;
+                                            if (name) {
+                                                await PharmacyService.addMedicine({
+                                                    name,
+                                                    sku: sku || "",
+                                                    unit: unit || 'Viên',
+                                                    category: category || 'Tổng hợp',
+                                                    sellPrice: Number(priceStr) || 0,
+                                                    minStockLevel: 10,
+                                                    isActive: true
+                                                });
+                                                count++;
+                                            }
+                                        }
+                                    }
+                                    alert(`Đã nhập thành công ${count} loại thuốc!`);
+                                    loadMedicines();
+                                    e.target.value = ''; // Reset
+                                };
+                                reader.readAsText(file);
+                            }}
+                        />
+                    </div>
+                </CardContent>
+            </Card>
 
             <Card>
                 <CardContent className="p-0">
@@ -176,7 +234,7 @@ export function MedicineCatalog() {
                 <DialogContent className="max-w-lg">
                     <DialogHeader>
                         <DialogTitle>{currentId ? "Sửa thông tin thuốc" : "Thêm định nghĩa thuốc mới"}</DialogTitle>
-                        <DialogDescription>Chỉnh sửa các thông tin cơ bản. Giá và tồn kho được quản lý tại tab Kho.</DialogDescription>
+                        <DialogDescription>Chập các thông tin cơ bản và giá tham chiếu.</DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
                         <div className="grid grid-cols-2 gap-4">
@@ -189,9 +247,46 @@ export function MedicineCatalog() {
                                 <Input value={formData.sku} onChange={e => setFormData({ ...formData, sku: e.target.value })} placeholder="VD: PAN001" />
                             </div>
                             <div className="space-y-2">
-                                <Label>Đơn vị tính</Label>
-                                <Input value={formData.unit} onChange={e => setFormData({ ...formData, unit: e.target.value })} placeholder="Viên, Vỉ..." />
+                                <Label>Đơn vị cơ bản</Label>
+                                <Input value={formData.unit} onChange={e => setFormData({ ...formData, unit: e.target.value })} placeholder="Viên" />
                             </div>
+
+                            {/* Packaging Configuration */}
+                            <div className="col-span-2 grid grid-cols-3 gap-4 border p-3 rounded bg-slate-50">
+                                <div className="space-y-2">
+                                    <Label className="text-xs">Quy cách đóng gói</Label>
+                                    <Input
+                                        placeholder="VD: Hộp 10 vỉ"
+                                        value={formData.packaging || ""}
+                                        onChange={e => setFormData({ ...formData, packaging: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-xs">Số vỉ / Hộp</Label>
+                                    <Input
+                                        type="number"
+                                        placeholder="1"
+                                        value={formData.packagingSpecification?.boxToBlister || ""}
+                                        onChange={e => setFormData({
+                                            ...formData,
+                                            packagingSpecification: { ...formData.packagingSpecification, boxToBlister: Number(e.target.value) }
+                                        })}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-xs">Số viên / Vỉ</Label>
+                                    <Input
+                                        type="number"
+                                        placeholder="10"
+                                        value={formData.packagingSpecification?.blisterToUnit || ""}
+                                        onChange={e => setFormData({
+                                            ...formData,
+                                            packagingSpecification: { ...formData.packagingSpecification, blisterToUnit: Number(e.target.value) }
+                                        })}
+                                    />
+                                </div>
+                            </div>
+
                             <div className="space-y-2">
                                 <Label>Phân loại</Label>
                                 <Input value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })} placeholder="VD: Kháng sinh, Giảm đau" />
@@ -199,6 +294,67 @@ export function MedicineCatalog() {
                             <div className="space-y-2">
                                 <Label>Cảnh báo tồn kho ít nhất</Label>
                                 <Input type="number" value={formData.minStockLevel?.toString()} onChange={e => setFormData({ ...formData, minStockLevel: Number(e.target.value) })} />
+                            </div>
+
+                            {/* Price Configuration */}
+                            <div className="col-span-2 grid grid-cols-2 gap-4 border p-3 rounded bg-blue-50/50">
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-semibold">Giá Nhập / {formData.unit || "Đơn vị"}</Label>
+                                    <Input
+                                        type="number"
+                                        className="bg-white font-bold"
+                                        value={formData.costPrice}
+                                        onChange={e => setFormData({ ...formData, costPrice: Number(e.target.value) })}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-semibold">Giá Bán / {formData.unit || "Đơn vị"}</Label>
+                                    <Input
+                                        type="number"
+                                        className="bg-white font-bold text-blue-700"
+                                        value={formData.sellPrice}
+                                        onChange={e => setFormData({ ...formData, sellPrice: Number(e.target.value) })}
+                                    />
+                                </div>
+
+                                {/* Box Price Helper */}
+                                {(formData.packagingSpecification?.boxToBlister && formData.packagingSpecification.blisterToUnit) && (
+                                    <>
+                                        <div className="col-span-2 text-xs text-muted-foreground italic border-t pt-2 mt-1">
+                                            Công cụ tính nhanh từ giá Hộp (Tự động chia cho {(formData.packagingSpecification.boxToBlister * formData.packagingSpecification.blisterToUnit)} {formData.unit})
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs">Giá Nhập (Hộp)</Label>
+                                            <Input
+                                                type="number"
+                                                placeholder="Nhập giá hộp..."
+                                                className="bg-white/50"
+                                                onChange={(e) => {
+                                                    const boxPrice = Number(e.target.value);
+                                                    const ratio = (formData.packagingSpecification?.boxToBlister || 1) * (formData.packagingSpecification?.blisterToUnit || 1);
+                                                    if (ratio > 0 && boxPrice > 0) {
+                                                        setFormData(prev => ({ ...prev, costPrice: Math.round(boxPrice / ratio) }));
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs">Giá Bán (Hộp)</Label>
+                                            <Input
+                                                type="number"
+                                                placeholder="Nhập giá hộp..."
+                                                className="bg-white/50"
+                                                onChange={(e) => {
+                                                    const boxPrice = Number(e.target.value);
+                                                    const ratio = (formData.packagingSpecification?.boxToBlister || 1) * (formData.packagingSpecification?.blisterToUnit || 1);
+                                                    if (ratio > 0 && boxPrice > 0) {
+                                                        setFormData(prev => ({ ...prev, sellPrice: Math.round(boxPrice / ratio) }));
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+                                    </>
+                                )}
                             </div>
                             <div className="space-y-2 col-span-2">
                                 <Label>Cách dùng mặc định</Label>
@@ -212,6 +368,6 @@ export function MedicineCatalog() {
                     </div>
                 </DialogContent>
             </Dialog>
-        </div>
+        </div >
     );
 }

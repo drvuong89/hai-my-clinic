@@ -13,14 +13,25 @@ import { EmrService } from "@/lib/services/emr-service";
 import { Patient, VisitSession } from "@/types/clinic";
 import { db, auth } from "@/lib/firebase"; // Using direct db for listener
 import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
+import { AlertTriangle } from "lucide-react"; // Icons for payment
+import { MedicalRecord } from "@/types/clinic"; // Ensure MedicalRecord is imported for casting if needed
 
 export default function ReceptionPage() {
     // State
     const [searchTerm, setSearchTerm] = useState("");
     const [searchResults, setSearchResults] = useState<Patient[]>([]);
+    // Helper: Get local Date string YYYY-MM-DD
+    const getLocalDateString = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
     const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
     const [queue, setQueue] = useState<VisitSession[]>([]);
     const [isSaving, setIsSaving] = useState(false);
+    const [selectedDate, setSelectedDate] = useState(getLocalDateString(new Date())); // Default today local
 
     // New Patient Form
     const [newPatient, setNewPatient] = useState({
@@ -34,13 +45,10 @@ export default function ReceptionPage() {
 
     // Load queue real-time
     useEffect(() => {
-        // Query visits with status 'waiting' or 'in_progress' today 
-        // SIMPLIFIED QUERY: Removing orderBy temporarily to fix "Missing Index" issue.
-        // Client-side sorting will handle the order.
+        // Query visits with status 'waiting' or 'in_progress' or 'completed' 
         const q = query(
             collection(db, "visits"),
-            where("status", "in", ["waiting", "in_progress"])
-            // orderBy("checkInTime", "asc") <-- REMOVED TO FIX INDEX ERROR
+            where("status", "in", ["waiting", "in_progress", "completed", "waiting_payment"])
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -58,6 +66,11 @@ export default function ReceptionPage() {
 
         return () => unsubscribe();
     }, []);
+
+    // Filter queue by selected date
+    const filteredQueue = queue.filter(v => {
+        return getLocalDateString(new Date(v.checkInTime)) === selectedDate;
+    });
 
     // Search Handler
     const handleSearch = async () => {
@@ -141,6 +154,8 @@ export default function ReceptionPage() {
             alert("Lỗi xếp hàng");
         }
     };
+
+
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-8rem)]">
@@ -300,6 +315,8 @@ export default function ReceptionPage() {
                                 </DialogFooter>
                             </DialogContent>
                         </Dialog>
+
+
                     </CardContent>
                 </Card>
             </div>
@@ -308,17 +325,25 @@ export default function ReceptionPage() {
             <div className="lg:col-span-2">
                 <Card className="h-full flex flex-col">
                     <CardHeader className="flex flex-row items-center justify-between">
-                        <CardTitle className="flex items-center gap-2">
-                            <Clock className="w-5 h-5 text-primary" />
-                            Hàng chờ khám (Live)
-                        </CardTitle>
+                        <div className="flex items-center gap-4">
+                            <CardTitle className="flex items-center gap-2">
+                                <Clock className="w-5 h-5 text-primary" />
+                                Danh sách khám
+                            </CardTitle>
+                            <Input
+                                type="date"
+                                value={selectedDate}
+                                onChange={(e) => setSelectedDate(e.target.value)}
+                                className="w-[140px] h-8 text-sm"
+                            />
+                        </div>
                         <div className="flex gap-2">
                             <span className="flex items-center gap-1 text-sm bg-blue-100 text-blue-800 px-3 py-1 rounded-full">
                                 <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-                                Đang chờ: {queue.filter(q => q.status === "waiting").length}
+                                Đang chờ: {filteredQueue.filter(q => q.status === "waiting").length}
                             </span>
                             <span className="flex items-center gap-1 text-sm bg-green-100 text-green-800 px-3 py-1 rounded-full">
-                                Đang khám: {queue.filter(q => q.status === "in_progress").length}
+                                Đang khám: {filteredQueue.filter(q => q.status === "in_progress").length}
                             </span>
                         </div>
                     </CardHeader>
@@ -332,11 +357,13 @@ export default function ReceptionPage() {
                                 <div className="col-span-4 text-right">Giờ đến</div>
                             </div>
 
-                            {queue.length === 0 && (
-                                <div className="py-8 text-center text-muted-foreground">Chưa có bệnh nhân nào trong hàng chờ.</div>
+                            {filteredQueue.length === 0 && (
+                                <div className="py-8 text-center text-muted-foreground">
+                                    Không có bệnh nhân nào trong danh sách ngày {new Date(selectedDate).toLocaleDateString('vi-VN')}.
+                                </div>
                             )}
 
-                            {queue.map((visit, index) => (
+                            {filteredQueue.map((visit, index) => (
                                 <div key={visit.id} className="grid grid-cols-12 gap-4 py-4 items-center border-b hover:bg-muted/50 transition-colors">
                                     <div className="col-span-1 font-bold text-sm text-primary">{index + 1}</div>
                                     <div className="col-span-4">
@@ -344,9 +371,22 @@ export default function ReceptionPage() {
                                         <p className="text-xs text-muted-foreground">{visit.patientPhone}</p>
                                     </div>
                                     <div className="col-span-3">
-                                        <span className={`px-2 py-1 rounded text-xs font-medium ${visit.status === 'in_progress' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                                            {visit.status === 'in_progress' ? 'Đang khám' : 'Đang chờ'}
-                                        </span>
+                                        {visit.status === 'in_progress' ? (
+                                            <span className="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700">Đang khám</span>
+                                        ) : visit.status === 'waiting' ? (
+                                            <span className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700">Đang chờ</span>
+                                        ) : visit.status === 'waiting_payment' ? (
+                                            <span className="px-2 py-1 rounded text-xs font-medium bg-orange-100 text-orange-700">Chờ thanh toán (BS)</span>
+                                        ) : (
+                                            <span className={`px-2 py-1 rounded text-xs font-medium transition-colors ${visit.status === 'completed'
+                                                ? (visit.paymentMethod === 'transfer' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700')
+                                                : 'bg-slate-100 text-slate-700'
+                                                }`}>
+                                                {visit.status === 'completed'
+                                                    ? (visit.paymentMethod === 'transfer' ? 'Đã Chuyển khoản' : visit.paymentMethod === 'cash' ? 'Đã thu tiền' : 'Hoàn thành')
+                                                    : visit.status}
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="col-span-4 text-right text-xs text-muted-foreground">
                                         {new Date(visit.checkInTime).toLocaleTimeString('vi-VN')}

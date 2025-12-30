@@ -12,7 +12,12 @@ import { Patient } from "@/types/clinic";
 
 export default function ReportsPage() {
     // State for Revenue
-    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
+    // Fix timezone issue by using local date
+    const [selectedDate, setSelectedDate] = useState(() => {
+        const d = new Date();
+        const offset = d.getTimezoneOffset() * 60000;
+        return new Date(d.getTime() - offset).toISOString().split("T")[0];
+    });
     const [revenueData, setRevenueData] = useState<DailyRevenue | null>(null);
     const [loadingRevenue, setLoadingRevenue] = useState(false);
 
@@ -112,72 +117,189 @@ export default function ReportsPage() {
                         </Button>
                     </div>
 
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                         <Card>
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                 <CardTitle className="text-sm font-medium">Tổng doanh thu</CardTitle>
-                                <span className="text-muted-foreground font-bold">₫</span>
+                                <span className="text-muted-foreground font-bold">∑</span>
                             </CardHeader>
                             <CardContent>
                                 <div className="text-2xl font-bold text-green-600">
                                     {revenueData ? revenueData.totalRevenue.toLocaleString('vi-VN') : "..."} ₫
                                 </div>
-                                <p className="text-xs text-muted-foreground">Trong ngày {new Date(selectedDate).toLocaleDateString('vi-VN')}</p>
                             </CardContent>
                         </Card>
                         <Card>
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                <CardTitle className="text-sm font-medium">Tổng lượt khám</CardTitle>
-                                <span className="text-muted-foreground font-bold">#</span>
+                                <CardTitle className="text-sm font-medium">Tiền Dịch vụ</CardTitle>
+                                <span className="text-muted-foreground font-bold">D</span>
                             </CardHeader>
                             <CardContent>
                                 <div className="text-2xl font-bold text-blue-600">
-                                    {revenueData ? revenueData.totalVisits : "..."}
+                                    {revenueData ? revenueData.serviceRevenue.toLocaleString('vi-VN') : "..."} ₫
                                 </div>
-                                <p className="text-xs text-muted-foreground">Ca khám có phát sinh dịch vụ</p>
+                                <p className="text-xs text-muted-foreground">Khám, Siêu âm, Thủ thuật</p>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle className="text-sm font-medium">Tiền Thuốc</CardTitle>
+                                <span className="text-muted-foreground font-bold">T</span>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="text-2xl font-bold text-orange-600">
+                                    {revenueData ? revenueData.medicineRevenue.toLocaleString('vi-VN') : "..."} ₫
+                                </div>
+                                <p className="text-xs text-muted-foreground">Bán thuốc rẽ & theo đơn</p>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle className="text-sm font-medium">Hoạt động</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="text-sm font-medium">
+                                    {revenueData ? revenueData.totalVisits : "..."} Ca khám
+                                </div>
+                                <div className="text-sm font-medium text-muted-foreground">
+                                    {revenueData ? revenueData.totalOrders : "..."} Đơn thuốc
+                                </div>
                             </CardContent>
                         </Card>
                     </div>
 
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Chi tiết giao dịch</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="relative w-full overflow-auto">
-                                <table className="w-full caption-bottom text-sm text-left">
-                                    <thead className="[&_tr]:border-b">
-                                        <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                                            <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground">Giờ</th>
-                                            <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground">Bệnh nhân</th>
-                                            <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground">Dịch vụ</th>
-                                            <th className="h-10 px-2 text-right align-middle font-medium text-muted-foreground">Thành tiền</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="[&_tr:last-child]:border-0">
-                                        {loadingRevenue ? (
-                                            <tr><td colSpan={4} className="p-4 text-center">Đang tải...</td></tr>
-                                        ) : revenueData?.visits.length === 0 ? (
-                                            <tr><td colSpan={4} className="p-4 text-center text-muted-foreground">Không có dữ liệu doanh thu cho ngày này.</td></tr>
-                                        ) : (
-                                            revenueData?.visits.map((visit) => (
-                                                <tr key={visit.id} className="border-b transition-colors hover:bg-muted/50">
-                                                    <td className="p-2 align-middle">{visit.time}</td>
-                                                    <td className="p-2 align-middle font-medium">{visit.patientName}</td>
-                                                    <td className="p-2 align-middle text-muted-foreground text-xs max-w-[200px] truncate">
-                                                        {visit.services.join(", ")}
-                                                    </td>
-                                                    <td className="p-2 align-middle text-right font-bold">
-                                                        {visit.amount.toLocaleString('vi-VN')}
-                                                    </td>
+                    {/* BREAKDOWN TABLES */}
+                    <div className="grid gap-4 md:grid-cols-2">
+                        {/* SERVICE BREAKDOWN */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Chi tiết Dịch vụ</CardTitle>
+                                <CardDescription>Doanh thu theo loại dịch vụ</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-4 max-h-[400px] overflow-auto">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="border-b text-muted-foreground">
+                                                <th className="text-left font-medium py-2">Tên Dịch vụ</th>
+                                                <th className="text-right font-medium py-2">Số lượng</th>
+                                                <th className="text-right font-medium py-2">Thành tiền</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {revenueData && revenueData.revenueByServiceItem ? (
+                                                Object.entries(revenueData.revenueByServiceItem)
+                                                    .sort(([, a], [, b]) => b.amount - a.amount)
+                                                    .map(([name, data]) => (
+                                                        <tr key={name} className="border-b last:border-0 hover:bg-slate-50">
+                                                            <td className="py-2 text-slate-700">{name}</td>
+                                                            <td className="py-2 text-right font-mono">{data.quantity}</td>
+                                                            <td className="py-2 text-right font-bold text-blue-600">
+                                                                {data.amount.toLocaleString('vi-VN')}
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                            ) : (
+                                                <tr><td colSpan={3} className="py-4 text-center text-muted-foreground">Chưa có dữ liệu.</td></tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* MEDICINE BREAKDOWN */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Chi tiết Thuốc</CardTitle>
+                                <CardDescription>Doanh thu theo mặt hàng thuốc</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-4 max-h-[400px] overflow-auto">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="border-b text-muted-foreground">
+                                                <th className="text-left font-medium py-2">Tên Thuốc (Mã)</th>
+                                                <th className="text-right font-medium py-2">Số lượng</th>
+                                                <th className="text-right font-medium py-2">Thành tiền</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {revenueData && revenueData.revenueByMedicineItem ? (
+                                                Object.entries(revenueData.revenueByMedicineItem)
+                                                    .sort(([, a], [, b]) => b.amount - a.amount)
+                                                    .map(([name, data]) => (
+                                                        <tr key={name} className="border-b last:border-0 hover:bg-slate-50">
+                                                            <td className="py-2 text-slate-700 max-w-[150px] truncate" title={name}>{name}</td>
+                                                            <td className="py-2 text-right font-mono">{data.quantity}</td>
+                                                            <td className="py-2 text-right font-bold text-orange-600">
+                                                                {data.amount.toLocaleString('vi-VN')}
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                            ) : (
+                                                <tr><td colSpan={3} className="py-4 text-center text-muted-foreground">Chưa có dữ liệu.</td></tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    {/* TRANSACTIONS TAB */}
+                    <Tabs defaultValue="hide" className="w-full mt-6">
+                        <TabsList className="w-full justify-start border-b rounded-none h-auto p-0 bg-transparent">
+                            <TabsTrigger
+                                value="details"
+                                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2"
+                            >
+                                Chi tiết giao dịch (Logs)
+                            </TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="details" className="pt-4">
+                            <Card>
+                                <CardContent className="p-0">
+                                    <div className="relative w-full overflow-auto max-h-[500px]">
+                                        <table className="w-full caption-bottom text-sm text-left">
+                                            <thead className="[&_tr]:border-b sticky top-0 bg-white">
+                                                <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                                                    <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground">Giờ</th>
+                                                    <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground">Bệnh nhân</th>
+                                                    <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground">Hạng mục</th>
+                                                    <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground">Thành tiền</th>
                                                 </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </CardContent>
-                    </Card>
+                                            </thead>
+                                            <tbody className="[&_tr:last-child]:border-0">
+                                                {loadingRevenue ? (
+                                                    <tr><td colSpan={4} className="p-4 text-center">Đang tải...</td></tr>
+                                                ) : revenueData?.visits.length === 0 ? (
+                                                    <tr><td colSpan={4} className="p-4 text-center text-muted-foreground">Không có dữ liệu giao dịch cho ngày này.</td></tr>
+                                                ) : (
+                                                    revenueData?.visits.map((visit) => (
+                                                        <tr key={visit.id} className="border-b transition-colors hover:bg-muted/50">
+                                                            <td className="p-4 align-middle">{visit.time}</td>
+                                                            <td className="p-4 align-middle font-medium">
+                                                                {visit.patientName}<br />
+                                                                <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded border ${visit.type === 'service' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-orange-50 text-orange-600 border-orange-200'
+                                                                    }`}>{visit.type === 'service' ? 'Dịch vụ' : 'Thuốc'}</span>
+                                                            </td>
+                                                            <td className="p-4 align-middle text-muted-foreground text-xs max-w-[300px]">
+                                                                {visit.items.join(", ")}
+                                                            </td>
+                                                            <td className="p-4 align-middle text-right font-bold">
+                                                                {visit.amount.toLocaleString('vi-VN')}
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </TabsContent>
+                    </Tabs>
                 </TabsContent>
 
                 {/* EXPORT TAB */}
