@@ -85,7 +85,7 @@ export default function MessagesPage() {
             <div className="flex-1">
                 <Card className="h-full flex flex-col">
                     {/* Messages Area */}
-                    <div className="flex-1 p-4 overflow-y-auto" ref={scrollRef}>
+                    <ScrollArea className="flex-1 p-4" ref={scrollRef}>
                         <div className="space-y-4">
                             {messages.map((msg) => {
                                 const isMe = msg.senderId === user?.uid;
@@ -108,7 +108,7 @@ export default function MessagesPage() {
                                 </p>
                             )}
                         </div>
-                    </div>
+                    </ScrollArea>
 
                     {/* Input Area */}
                     <div className="p-4 border-t flex gap-2">

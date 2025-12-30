@@ -32,7 +32,7 @@ export const ChatService = {
         const q = query(
             collection(db, "messages"),
             where("roomId", "==", roomId),
-            orderBy("createdAt", "asc"), // We might need an index for this. If it fails, we'll fix.
+            // orderBy("createdAt", "asc"), // Removed to avoid needing a composite index
             limit(100)
         );
 
@@ -41,6 +41,8 @@ export const ChatService = {
             snapshot.forEach(doc => {
                 messages.push({ id: doc.id, ...doc.data() } as ChatMessage);
             });
+            // Client-side sort
+            messages.sort((a, b) => a.createdAt - b.createdAt);
             callback(messages);
         }, (error) => {
             console.error("Chat listener error:", error);
