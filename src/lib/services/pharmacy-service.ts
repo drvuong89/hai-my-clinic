@@ -62,7 +62,7 @@ export const PharmacyService = {
     // --- SALES (POS) ---
     // Sell items using FEFO (First Expiring First Out) logic
     createSale: async (
-        orderData: Omit<PrescriptionOrder, "id" | "items" | "totalAmount">,
+        orderData: Omit<PrescriptionOrder, "id" | "items" | "totalAmount" | "createdAt">,
         cartItems: { medicineId: string; quantity: number; price: number }[]
     ) => {
         return await runTransaction(db, async (transaction) => {
