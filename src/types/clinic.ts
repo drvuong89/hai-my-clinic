@@ -19,6 +19,7 @@ export interface ServiceItem {
     name: string;
     type: ServiceType;
     price: number;
+    costPrice?: number; // Added for profit calculation
     unit: string;
     isActive: boolean;
 }
