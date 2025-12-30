@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Save, Printer, ArrowLeft } from "lucide-react";
+import { Save, Printer, ArrowLeft, CheckCircle } from "lucide-react";
 import Link from "next/link";
 import { EmrService } from "@/lib/services/emr-service";
 import { MedicalRecord } from "@/types/clinic";
@@ -61,6 +61,21 @@ export default function EmrDetailPage() {
         }
     };
 
+    const handleFinish = async () => {
+        if (!confirm("Xác nhận hoàn thành ca khám này? Bệnh nhân sẽ được chuyển trạng thái 'Đã khám'.")) return;
+
+        try {
+            // Save first to ensure latest data
+            await EmrService.updateRecord(visitId, record);
+            // Update status to completed (or pending_payment if you have cashier)
+            await EmrService.finishVisit(visitId, record.services || []);
+            router.push('/doctor'); // Back to list
+        } catch (e) {
+            console.error(e);
+            alert("Lỗi khi hoàn thành");
+        }
+    };
+
     // Helper to update deeply nested state
     const updateSection = (section: keyof MedicalRecord, field: string, value: any) => {
         setRecord(prev => {
@@ -94,6 +109,15 @@ export default function EmrDetailPage() {
 
     if (loading) return <div className="p-8 text-center">Đang tải hồ sơ...</div>;
 
+    // Logic helper for status badge
+    const getStatusBadge = (status: string | undefined) => {
+        switch (status) {
+            case 'completed': return <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-bold border border-green-200">Đã hoàn thành</span>;
+            case 'in_progress': return <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-bold border border-blue-200">Đang khám</span>;
+            default: return <span className="bg-slate-100 text-slate-800 px-3 py-1 rounded-full text-sm font-bold border border-slate-200">Chờ khám</span>;
+        }
+    };
+
     return (
         <div className="space-y-6">
             {/* Header / Info Bar */}
@@ -103,7 +127,10 @@ export default function EmrDetailPage() {
                         <Link href="/doctor"><ArrowLeft className="w-5 h-5" /></Link>
                     </Button>
                     <div>
-                        <h2 className="text-2xl font-bold">{patientDisplay.name} <span className="text-lg font-normal text-muted-foreground">({patientDisplay.age} tuổi)</span></h2>
+                        <div className="flex items-center gap-2">
+                            <h2 className="text-2xl font-bold">{patientDisplay.name} <span className="text-lg font-normal text-muted-foreground">({patientDisplay.age} tuổi)</span></h2>
+                            {getStatusBadge(record.status)}
+                        </div>
                         <div className="flex gap-4 text-sm mt-1">
                             <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Thai {record.ultrasound?.gestationalAge || patientDisplay.weeks}</span>
                             <span className="text-muted-foreground">Lý do: {record.notes || "Khám bệnh"}</span>
@@ -111,8 +138,11 @@ export default function EmrDetailPage() {
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    <Button variant="outline"><Printer className="w-4 h-4 mr-2" /> In phiếu</Button>
-                    <Button onClick={handleSave}><Save className="w-4 h-4 mr-2" /> Lưu hồ sơ</Button>
+                    <Button variant="outline" size="sm"><Printer className="w-4 h-4 mr-2" /> In phiếu</Button>
+                    <Button size="sm" variant="secondary" onClick={handleSave}><Save className="w-4 h-4 mr-2" /> Lưu nháp</Button>
+                    <Button size="sm" onClick={handleFinish} className="bg-green-600 hover:bg-green-700">
+                        <CheckCircle className="w-4 h-4 mr-2" /> H.Thành & Kết thúc
+                    </Button>
                 </div>
             </div>
 

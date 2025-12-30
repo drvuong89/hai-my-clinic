@@ -4,32 +4,55 @@ import { collection, addDoc, getDocs, query, where, orderBy, limit } from "fireb
 
 const COLLECTION_NAME = "patients";
 
+import { normalizeString } from "@/lib/utils";
+
+// ... existing imports
+
 export const PatientService = {
     // Search patients by Phone or Name
     search: async (searchTerm: string) => {
         if (!searchTerm) return [];
 
-        // Simple search implementation. 
-        // For better search, Algolia or specialized index is needed. 
-        // Here we try to match phone number or name prefix
-
         try {
             const patientsRef = collection(db, COLLECTION_NAME);
-            // NOTE: Firestore simple query limitations apply.
-            // We'll fetch recent or try exact phone match for MVP.
+            const normalizedTerm = normalizeString(searchTerm);
 
-            const q = query(
+            // Strategy:
+            // 1. Try finding by Phone (exact or prefix)
+            // 2. Try finding by searchName (normalized name)
+
+            const promises = [];
+
+            // Query 1: Phone
+            const qPhone = query(
                 patientsRef,
                 where("phone", ">=", searchTerm),
                 where("phone", "<=", searchTerm + '\uf8ff'),
                 limit(5)
             );
+            promises.push(getDocs(qPhone));
 
-            const snapshot = await getDocs(q);
-            const results: Patient[] = [];
-            snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() } as Patient));
+            // Query 2: Name (searchName)
+            if (normalizedTerm) {
+                const qName = query(
+                    patientsRef,
+                    where("searchName", ">=", normalizedTerm),
+                    where("searchName", "<=", normalizedTerm + '\uf8ff'),
+                    limit(5)
+                );
+                promises.push(getDocs(qName));
+            }
 
-            return results;
+            const snapshots = await Promise.all(promises);
+            const r: Map<string, Patient> = new Map();
+
+            snapshots.forEach(snap => {
+                snap.forEach(doc => {
+                    r.set(doc.id, { id: doc.id, ...doc.data() } as Patient);
+                });
+            });
+
+            return Array.from(r.values());
         } catch (error) {
             console.error("Error searching patients:", error);
             return [];
@@ -39,11 +62,13 @@ export const PatientService = {
     // Create new patient
     create: async (patient: Omit<Patient, "id" | "createdAt">) => {
         try {
+            const normalized = normalizeString(patient.fullName);
             const docRef = await addDoc(collection(db, COLLECTION_NAME), {
                 ...patient,
+                searchName: normalized,
                 createdAt: Date.now()
             });
-            return { id: docRef.id, ...patient };
+            return { id: docRef.id, ...patient, searchName: normalized };
         } catch (error) {
             console.error("Error creating patient:", error);
             throw error;

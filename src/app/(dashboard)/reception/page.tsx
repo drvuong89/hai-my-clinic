@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PatientService } from "@/lib/services/patient-service";
 import { EmrService } from "@/lib/services/emr-service";
 import { Patient, VisitSession } from "@/types/clinic";
-import { db } from "@/lib/firebase"; // Using direct db for listener
+import { db, auth } from "@/lib/firebase"; // Using direct db for listener
 import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
 
 export default function ReceptionPage() {
@@ -20,6 +20,7 @@ export default function ReceptionPage() {
     const [searchResults, setSearchResults] = useState<Patient[]>([]);
     const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
     const [queue, setQueue] = useState<VisitSession[]>([]);
+    const [isSaving, setIsSaving] = useState(false);
 
     // New Patient Form
     const [newPatient, setNewPatient] = useState({
@@ -27,17 +28,19 @@ export default function ReceptionPage() {
         phone: "",
         dateOfBirth: "",
         gender: "female" as const,
-        address: ""
+        address: "",
+        email: "" // Added email
     });
 
     // Load queue real-time
     useEffect(() => {
         // Query visits with status 'waiting' or 'in_progress' today 
-        // For simplicity, just showing all 'waiting'
+        // SIMPLIFIED QUERY: Removing orderBy temporarily to fix "Missing Index" issue.
+        // Client-side sorting will handle the order.
         const q = query(
             collection(db, "visits"),
-            where("status", "in", ["waiting", "in_progress"]),
-            orderBy("checkInTime", "asc")
+            where("status", "in", ["waiting", "in_progress"])
+            // orderBy("checkInTime", "asc") <-- REMOVED TO FIX INDEX ERROR
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -45,7 +48,12 @@ export default function ReceptionPage() {
             snapshot.forEach((doc) => {
                 visits.push({ id: doc.id, ...doc.data() } as VisitSession);
             });
+            // Client-side sort
+            visits.sort((a, b) => a.checkInTime - b.checkInTime);
             setQueue(visits);
+        }, (error) => {
+            console.error("Queue listener error:", error);
+            alert(`Lỗi kết nối danh sách chờ: ${error.message}`);
         });
 
         return () => unsubscribe();
@@ -60,15 +68,59 @@ export default function ReceptionPage() {
 
     // Add Patient & Check In
     const handleCreatePatient = async () => {
+        if (!newPatient.fullName || !newPatient.phone) {
+            alert("Vui lòng nhập Họ tên và Số điện thoại!");
+            return;
+        }
+
+        setIsSaving(true);
+        console.log("Starting create patient...", newPatient);
+        if (!auth.currentUser) {
+            alert("Lỗi: Bạn chưa đăng nhập hoặc phiên đăng nhập hết hạn. Vui lòng tải lại trang!");
+            setIsSaving(false);
+            return;
+        }
+
         try {
-            const created = await PatientService.create(newPatient);
+            // Helper for timeout
+            const withTimeout = <T,>(promise: Promise<T>, ms: number = 10000): Promise<T> => {
+                return Promise.race([
+                    promise,
+                    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("Quá thời gian chờ (timeout). Vui lòng kiểm tra mạng!")), ms))
+                ]);
+            };
+
+            // 1. Create Patient with Timeout
+            const created = await withTimeout(PatientService.create(newPatient));
+
+            // 2. Auto Check-in (Add to Queue)
+            await withTimeout(EmrService.createVisit({
+                patientId: created.id,
+                patientName: created.fullName,
+                patientPhone: created.phone,
+                dateOfBirth: created.dateOfBirth,
+                status: "waiting",
+                checkInTime: Date.now()
+            }));
+
             setIsAddPatientOpen(false);
-            // Automatically queue them? Or select them first.
-            // Let's select them first or just alert.
-            alert(`Đã thêm bệnh nhân: ${created.fullName}`);
-            setSearchResults([created]); // Show them in search result to click check-in
-        } catch (e) {
-            alert("Lỗi thêm bệnh nhân");
+            alert(`Đã thêm bệnh nhân "${created.fullName}" và xếp vào hàng chờ thành công!`);
+
+            // 3. Update Search & Reset Form
+            setSearchResults([created]);
+            setNewPatient({
+                fullName: "",
+                phone: "",
+                dateOfBirth: "",
+                gender: "female",
+                address: "",
+                email: ""
+            });
+        } catch (e: any) {
+            console.error("Error creating patient:", e);
+            alert(`Lỗi: ${e.message || "Vui lòng kiểm tra lại kết nối"}`);
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -122,6 +174,33 @@ export default function ReceptionPage() {
                                         <div>
                                             <p className="font-bold">{p.fullName}</p>
                                             <p className="text-xs">{p.phone}</p>
+                                            <div className="flex gap-1 mt-1">
+                                                {/* Zalo Button */}
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    className="h-6 text-[10px] px-2 bg-blue-50 text-blue-600 hover:bg-blue-100"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        window.open(`https://zalo.me/${p.phone}`, '_blank');
+                                                    }}
+                                                >
+                                                    Zalo
+                                                </Button>
+                                                {/* Facebook Button (Placeholder for now) */}
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    className="h-6 text-[10px] px-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        // Fallback to search if no username provided
+                                                        window.open(`https://www.facebook.com/search/top?q=${p.fullName}`, '_blank');
+                                                    }}
+                                                >
+                                                    FB
+                                                </Button>
+                                            </div>
                                         </div>
                                         <Button size="sm" onClick={() => handleCheckIn(p)}>Tiếp nhận</Button>
                                     </div>
@@ -153,26 +232,71 @@ export default function ReceptionPage() {
                                 </DialogHeader>
                                 <div className="grid gap-4 py-4">
                                     <div className="grid gap-2">
-                                        <Label>Họ và tên</Label>
-                                        <Input onChange={(e) => setNewPatient({ ...newPatient, fullName: e.target.value })} />
+                                        <Label>Họ và tên <span className="text-red-500">*</span></Label>
+                                        <Input
+                                            value={newPatient.fullName}
+                                            onChange={(e) => setNewPatient({ ...newPatient, fullName: e.target.value })}
+                                            placeholder="Nguyễn Văn A"
+                                        />
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="grid gap-2">
-                                            <Label>Số điện thoại</Label>
-                                            <Input onChange={(e) => setNewPatient({ ...newPatient, phone: e.target.value })} />
+                                            <Label>Số điện thoại <span className="text-red-500">*</span></Label>
+                                            <Input
+                                                value={newPatient.phone}
+                                                onChange={(e) => setNewPatient({ ...newPatient, phone: e.target.value })}
+                                                placeholder="09..."
+                                            />
                                         </div>
                                         <div className="grid gap-2">
-                                            <Label>Năm sinh (YYYY)</Label>
-                                            <Input placeholder="1995" onChange={(e) => setNewPatient({ ...newPatient, dateOfBirth: e.target.value })} />
+                                            <Label>Ngày sinh</Label>
+                                            <Input
+                                                type="date"
+                                                value={newPatient.dateOfBirth}
+                                                onChange={(e) => setNewPatient({ ...newPatient, dateOfBirth: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+                                    {/* Updated Gender and Email */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="grid gap-2">
+                                            <Label>Giới tính</Label>
+                                            <Select
+                                                value={newPatient.gender}
+                                                onValueChange={(val: any) => setNewPatient({ ...newPatient, gender: val })}
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Chọn giới tính" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="female">Nữ</SelectItem>
+                                                    <SelectItem value="male">Nam</SelectItem>
+                                                    <SelectItem value="other">Khác</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label>Email (Tùy chọn)</Label>
+                                            <Input
+                                                type="email"
+                                                value={newPatient.email || ""}
+                                                onChange={(e) => setNewPatient({ ...newPatient, email: e.target.value })}
+                                                placeholder="email@example.com"
+                                            />
                                         </div>
                                     </div>
                                     <div className="grid gap-2">
                                         <Label>Địa chỉ</Label>
-                                        <Input onChange={(e) => setNewPatient({ ...newPatient, address: e.target.value })} />
+                                        <Input
+                                            value={newPatient.address}
+                                            onChange={(e) => setNewPatient({ ...newPatient, address: e.target.value })}
+                                        />
                                     </div>
                                 </div>
                                 <DialogFooter>
-                                    <Button onClick={handleCreatePatient}>Lưu & Tiếp đón</Button>
+                                    <Button onClick={handleCreatePatient} disabled={isSaving}>
+                                        {isSaving ? "Đang lưu..." : "Lưu & Tiếp đón"}
+                                    </Button>
                                 </DialogFooter>
                             </DialogContent>
                         </Dialog>

@@ -6,6 +6,7 @@ export interface Patient {
     phone: string;
     dateOfBirth?: string; // ISO 8601 YYYY-MM-DD
     gender: Gender;
+    email?: string; // New email field
     address?: string;
     medicalHistory?: string;
     createdAt?: number; // Timestamp

@@ -84,9 +84,9 @@ export function MedicineCatalog() {
             }
             setIsDialogOpen(false);
             loadMedicines();
-        } catch (e) {
-            console.error(e);
-            alert("Lỗi lưu dữ liệu");
+        } catch (e: any) {
+            console.error("Error saving medicine:", e);
+            alert(`Lỗi lưu dữ liệu: ${e.message || "Vui lòng thử lại"}`);
         }
     };
 

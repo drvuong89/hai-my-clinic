@@ -112,7 +112,10 @@ export function InventoryManager() {
             setIsImportDialogOpen(false);
             setImportData({ ...importData, medicineId: "", batchNumber: "", originalQuantity: 0, costPrice: 0 });
             loadData();
-        } catch (e) { alert("Lỗi nhập kho"); }
+        } catch (e: any) {
+            console.error("Error importing batch:", e);
+            alert(`Lỗi nhập kho: ${e.message}`);
+        }
     };
 
     const handleAddMedicine = async () => {
@@ -123,7 +126,10 @@ export function InventoryManager() {
             setNewMedData({ name: "", unit: "Viên", minStockLevel: 10, isActive: true });
             await refreshMedicines();
             setImportData(prev => ({ ...prev, medicineId: id }));
-        } catch (e) { alert("Lỗi thêm thuốc"); }
+        } catch (e: any) {
+            console.error("Error quick adding medicine:", e);
+            alert(`Lỗi thêm thuốc: ${e.message}`);
+        }
     };
 
     return (

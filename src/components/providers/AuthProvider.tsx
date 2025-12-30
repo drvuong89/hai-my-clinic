@@ -29,8 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             // Optional: Redirect logic if needed globally, usually handled in middleware or layout
             if (!user && window.location.pathname !== '/login') {
-                // router.push('/login'); 
-                // Commented out to allow unrestricted access during dev/demo if needed
+                router.push('/login');
             }
         });
 
